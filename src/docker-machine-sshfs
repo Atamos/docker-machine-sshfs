@@ -1,0 +1,457 @@
+#!/bin/bash
+#Subsystem sftp /usr/libexec/openssh/sftp-server
+set -e
+readonly COLOR_DEBUG='\033[1;36m'
+readonly COLOR_INFO='\033[0;32m'
+readonly COLOR_WARN='\033[1;33m'
+readonly COLOR_ERROR='\033[0;31m'
+readonly COLOR_INSTRUCTIONS='\033[0;37m'
+readonly COLOR_END='\033[0m'
+
+readonly LOG_LEVEL_DEBUG="DEBUG"
+readonly LOG_LEVEL_INFO="INFO"
+
+readonly LOG_LEVELS="$LOG_LEVEL_DEBUG $LOG_LEVEL_INFO $LOG_LEVEL_WARN $LOG_LEVEL_ERROR $LOG_LEVEL_INSTRUCTIONS"
+readonly DEFAULT_LOG_LEVEL="$LOG_LEVEL_INFO"
+
+readonly INSTALL_COMMAND="install"
+readonly DEFAULT_COMMAND="$INSTALL_COMMAND"
+readonly MINIMAL_DOCKER_VERSION=0.4.1
+readonly SSHFS_PKG='sshfs-fuse-2.5.x86_64.tcz'
+readonly SSHFS_OPTIONS='-o UserKnownHostsFile=/dev/null -o loglevel=debug -o StrictHostKeyChecking=no -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 -o Ciphers=arcfour,auto_cache,reconnect,big_writes,allow_other,default_permissions'
+readonly SSHFS_GUID='50'
+readonly SSHFS_UID='1000'
+
+readonly muted_ssh_question_options='-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
+
+function program_is_installed {
+  # set to 1 initially
+  local return_=1
+  # set to 0 if not found
+  type $1 >/dev/null 2>&1 || { local return_=0; }
+  # return value
+  echo "$return_"
+}
+
+function check_prerequisites {
+  local readonly os=$(uname)
+
+  if [[ ! "$os" = "Darwin" ]]; then
+    log_error "This script should only be run on OS X"
+    exit 1
+  fi
+
+  if [[ $(program_is_installed docker-machine) == 0 ]]; then 
+  	log_error "docker-machine not found"
+  	exit 1
+  fi
+
+
+  local readonly v=$(check_version)
+  if [[ $v == 0 ]]; then 
+  	log_error "old version. please update your docker-machine before continue"
+  	exit 1
+  fi	
+
+  echo $v_machine
+}
+
+check_version()
+{
+	local readonly version=$(docker-machine --version | awk '{print $3}')
+    local check=$MINIMAL_DOCKER_VERSION
+    local winner=$(echo -e "$version\n$check" | sed '/^$/d' | sort -nr | head -1)
+    if [[ $winner == $version ]]; then 
+    	echo 1
+    else 
+    	echo 0
+    fi
+}
+
+function configure_log_level {
+  local readonly level="$1"
+  assert_valid_log_level "$level"
+  CURRENT_LOG_LEVEL="$level"
+}
+
+function assert_valid_log_level {
+  local readonly level="$1"
+  local readonly index=$(index_of "$level" $LOG_LEVELS)
+
+  if [[ "$index" -lt 0 ]]; then
+    echo "Invalid log level specified: $level"
+    instructions
+    exit 1
+  fi
+}
+
+function index_of {
+  local readonly value="$1"
+  shift
+  local readonly array=("$@")
+  local i=0
+
+  for (( i = 0; i < ${#array[@]}; i++ )); do
+    if [ "${array[$i]}" = "${value}" ]; then
+      echo $i
+      return
+    fi
+  done
+
+  echo -1
+}
+
+function log_error {
+  log "$COLOR_ERROR" "$COLOR_END" "ERR" "$@"
+}
+function log_info {
+  log "$COLOR_INFO" "$COLOR_END"  "$LOG_LEVEL_INFO" "$@"
+}
+function log_debug {
+  log "$COLOR_DEBUG" "$COLOR_END" "$LOG_LEVEL_DEBUG" "$@"
+}
+
+function log {
+  local readonly color="$1"
+  shift
+  local readonly color_end="$1"
+  shift
+  local readonly log_level="$1"
+  shift
+  local readonly message="$@"
+  if [[ "$log_level_index" -ge "$current_log_level_index" ]]; then
+    echo -e "${color}${timestamp} [${log_level}] ${message} ${color_end} "
+  fi
+}
+
+function assert_valid_arg {
+  local readonly arg="$1"
+  local readonly arg_name="$2"
+
+  if [[ -z "$arg" || "${arg:0:1}" = "-" ]]; then
+    log_error "You must provide a value for argument $arg_name"
+    instructions
+    exit 1
+  fi
+}
+
+
+function instructions {
+  echo -e $COLOR_END
+  echo -e "Usage: docker-osx-dev [COMMAND] [OPTIONS]"
+  echo -e
+  echo -e "Commands:"
+  echo -e "  $INSTALL_COMMAND\tInstall docker-osx-dev and all of its dependencies."
+  echo -e
+  echo -e "Options:"
+  echo -e "  -m, --machine-name name\t\tWhen suplied syncs with the given docker machine host"
+  echo -e "  -l, --log-level LOG_LEVEL\t\tSpecify the logging level. One of: $LOG_LEVELS. Default: ${DEFAULT_LOG_LEVEL}"
+  echo -e "  -h, --help\t\t\t\tPrint this help text and exit."
+  echo -e
+}
+
+function inspect_docker_machine {
+  docker-machine inspect --format="$*" "$DOCKER_MACHINE_NAME" 2>&1
+}
+
+function configure_docker_machine {
+  DOCKER_HOST_NAME="$DOCKER_MACHINE_NAME"
+  DOCKER_HOST_USER=$(inspect_docker_machine "{{.Driver.SSHUser}}")
+  DOCKER_HOST_IP=$(inspect_docker_machine "{{.Driver.IPAddress}}")
+  DOCKER_MACHINE_STORE_PATH=$(inspect_docker_machine "{{.StorePath}}")
+  DOCKER_MACHINE_DRIVER_NAME=$(inspect_docker_machine "{{.DriverName}}")
+
+  DOCKER_HOST_SSH_URL="$DOCKER_HOST_USER@$DOCKER_HOST_IP"
+  DOCKER_HOST_SSH_KEY="$DOCKER_MACHINE_STORE_PATH/id_rsa"
+  if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then
+    DOCKER_HOST_SSH_COMMAND="docker-machine -D ssh $DOCKER_MACHINE_NAME"
+  else
+    DOCKER_HOST_SSH_COMMAND="docker-machine ssh $DOCKER_MACHINE_NAME"
+  fi
+
+  if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then
+  	log_debug "DOCKER_HOST_NAME: $DOCKER_HOST_NAME"
+  	log_debug "DOCKER_HOST_USER: $DOCKER_HOST_USER"
+  	log_debug "DOCKER_HOST_IP:  $DOCKER_HOST_IP"
+  	log_debug "DOCKER_MACHINE_STORE_PATH:  $DOCKER_MACHINE_STORE_PATH"
+  	log_debug "DOCKER_MACHINE_DRIVER_NAME:  $DOCKER_MACHINE_DRIVER_NAME"
+  	log_debug "DOCKER_HOST_SSH_URL:  $DOCKER_HOST_SSH_URL"
+  	log_debug "DOCKER_HOST_SSH_KEY:  $DOCKER_HOST_SSH_KEY"
+  	log_debug "DOCKER_HOST_SSH_COMMAND:  $DOCKER_HOST_SSH_COMMAND"
+  fi	
+
+}
+
+function init_docker_machine {
+  log_info "Initializing docker machine $DOCKER_MACHINE_NAME"
+
+  log_info "check if docker_machine exists"
+
+  local list=$(docker-machine ls | awk '{print $1}')
+  
+  if [[ $list =~ $DOCKER_MACHINE_NAME ]]; then 
+  	log_info "Use $DOCKER_MACHINE_NAME machine"
+  else
+  	log_info "Creating $DOCKER_MACHINE_NAME machine"
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then
+		log_debug "CMD: docker-machine create --driver virtualbox --virtualbox-memory 4096 $DOCKER_MACHINE_NAME"
+	fi	
+	machine=$(docker-machine create --driver virtualbox --virtualbox-memory 4096 $DOCKER_MACHINE_NAME)
+  fi
+
+ 
+  if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then
+  	log_debug "CMD: docker-machine start $DOCKER_MACHINE_NAME"
+  	log_debug "CMD: docker-machine env --shell bash $DOCKER_MACHINE_NAME"
+  fi	
+
+  docker-machine start $DOCKER_MACHINE_NAME
+  eval "$(docker-machine env --shell bash $DOCKER_MACHINE_NAME)"
+  configure_docker_machine
+}
+
+
+function install_sshfs_on_docker_host {
+  log_info "Installing sshfs in the Docker Host image"
+
+  if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then
+  	log_debug "CMD: scp $(pwd)/../lib/$SSHFS_PKG $DOCKER_MACHINE_NAME:/var/lib/boot2docker"
+  	log_debug "CMD: tce-load -i /var/lib/boot2docker/$SSHFS_PKG"
+  	log_debug "CMD: docker-machine ssh $DOCKER_MACHINE_NAME 'sudo  cp /root/$SSHFS_PKG /var/lib/boot2docker/'"
+  fi	
+
+  docker-machine scp $(pwd)/../lib/$SSHFS_PKG $DOCKER_MACHINE_NAME:/root/
+
+  docker-machine ssh $DOCKER_MACHINE_NAME "tce-load -i /root/$SSHFS_PKG"
+
+  docker-machine ssh $DOCKER_MACHINE_NAME "sudo  cp /root/$SSHFS_PKG /var/lib/boot2docker/"
+}
+
+
+function install_boot_script
+{
+	log_info "Install boot script"
+	
+
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+		log_debug "VBoxManage showvminfo $DOCKER_MACHINE_NAME --machinereadable | grep hostonlyadapter | cut -d'\"' -f 2"
+	fi
+
+	log_info "get vbox network interface"
+
+	local vboxinterface=$(VBoxManage showvminfo $DOCKER_MACHINE_NAME --machinereadable | grep hostonlyadapter | cut -d'"' -f 2)
+	
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+		log_debug "Found vboxinterface ${vboxinterface}"
+	fi
+
+	log_info 'Get ip address for interface '
+
+	local ipvbox=$(VboxManage list hostonlyifs | awk '/^Name: /{p=$2} /^IPAddress: /{v=$2} /^$/{print ""p"="v}' | grep vboxnet2 |  cut -d'=' -f 2)
+	VBOXIP=$ipvbox
+	
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+		echo "found ip address ${ipvbox}"
+	fi	
+}
+
+function generate_ssh_key
+{
+	log_info 'Generate and install ssh keys'
+
+	local user=$(whoami)
+
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+		log_debug "Check if keys exist"
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"if [ -f ~/.ssh/id_rsa.pub ]; then echo '1'; else echo '0'; fi\""
+	fi	
+
+	local keys=$(docker-machine ssh $DOCKER_MACHINE_NAME "if [ -f ~/.ssh/id_rsa.pub ]; then echo '1'; else echo '0'; fi")
+
+	#echo $keys
+	if [[ $keys == 1 ]]; then 
+		log_info 'Found keys'
+	else 
+		log_info 'Generating new keys'
+
+		if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+			log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"yes \"\" | ssh-keygen -t rsa -b 4096 -N \"\" -C \"marcosciatta@192.168.99.1\"\""
+		fi	
+		docker-machine ssh $DOCKER_MACHINE_NAME "yes \"\" | ssh-keygen -t rsa -b 4096 -N \"\" -C \"marcosciatta@192.168.99.1\""
+	fi	
+	
+	log_info "Copy keys in authorized on host machine"
+
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME cat .ssh/id_rsa.pub  >> ~/.ssh/authorized_keys"
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME sudo \"cp ~/.ssh/id_rsa ~/.ssh/id_rsa.pub /var/lib/boot2docker/ssh/\""
+	fi
+	docker-machine ssh $DOCKER_MACHINE_NAME cat .ssh/id_rsa.pub  >> ~/.ssh/authorized_keys
+	docker-machine ssh $DOCKER_MACHINE_NAME sudo "cp ~/.ssh/id_rsa ~/.ssh/id_rsa.pub /var/lib/boot2docker/ssh/"
+}
+
+
+function mount_user_dir
+{
+	log_info 'Mount user directory with sshfs'
+
+	log_info 'Check if user is mounted'
+
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME mount | grep 'Users' | wc -l"
+	fi
+
+	check=$(docker-machine ssh $DOCKER_MACHINE_NAME mount | grep 'Users' | wc -l)
+	
+	if [[  $check == 1 ]]; then 
+		log_info 'Umount Users directory'
+		if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+			log_debug "docker-machine ssh $DOCKER_MACHINE_NAME sudo umount -f /Users"
+		fi	
+		docker-machine ssh $DOCKER_MACHINE_NAME " sudo umount -f /Users"
+	fi
+
+	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"sudo sh -c \"echo 'user_allow_other' >> /etc/fuse.conf\"\""
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \" sudo chown docker:staff  /Users\""
+	fi	
+
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo sh -c \"echo 'user_allow_other' >> /etc/fuse.conf\""
+	docker-machine ssh $DOCKER_MACHINE_NAME " sudo chown docker:staff  /Users"	
+
+	user=$(whoami)
+
+	log_info 'Mount directory sshfs'
+
+	check=$(docker-machine ssh $DOCKER_MACHINE_NAME mount | grep 'Users' | wc -l)
+	if [[  $check == 0 ]]; then 		
+		if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
+			log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"sshfs $SSHFS_OPTIONS -o uid=$SSHFS_UID -o gid=$SSHFS_GUID $user@$VBOXIP:/Users/ /Users/\""
+		fi
+		docker-machine ssh $DOCKER_MACHINE_NAME "sshfs $SSHFS_OPTIONS -o uid=$SSHFS_UID -o gid=$SSHFS_GUID $user@$VBOXIP:/Users/ /Users/"
+	else
+		log_info 'Skip mount. Already mounted'
+	fi	
+
+	
+}
+
+function add_autoboot_script
+{
+	log_info 'Build automount'
+	log_info 'Check if docker-machine script exists'
+	SCRIPT_PATH='/var/lib/boot2docker/bootlocal.sh'
+
+	if [[ $CURRENT_LOG_LEVEL == "debug" ]]; then
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"if [ -f /var/lib/boot2docker/bootlocal.sh ]; then echo '1'; else echo '0'; fi\""
+	fi	
+
+	local autobot=$(docker-machine ssh $DOCKER_MACHINE_NAME "if [ -f /var/lib/boot2docker/bootlocal.sh ]; then echo '1'; else echo '0'; fi")
+
+	if [[ $autobot == 0 ]]; then 
+		log_info 'Script does not exists. Generating new one'
+	else 
+		docker-machine ssh $DOCKER_MACHINE_NAME "sudo sh -c \"cp $SCRIPT_PATH $SCRIPT_PATH.bk\""
+		log_info 'Script already exists. Copy in .bk file'
+	fi	
+
+	user=$(whoami)
+	
+	log_info 'Copy bootlocal.sh into vm'
+
+	if [[ $CURRENT_LOG_LEVEL == "debug" ]]; then 
+		log_debug "	docker-machine scp $(pwd)/../lib/bootlocal.sh $DOCKER_MACHINE_NAME:~" 
+		log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"sudo cp ~/bootlocal.sh /var/lib/boot2docker/bootlocal.sh\""
+	fi	
+
+	log_info 'Launching string substitutions'
+
+	docker-machine scp $(pwd)/../lib/bootlocal.sh $DOCKER_MACHINE_NAME:~
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo cp ~/bootlocal.sh /var/lib/boot2docker/bootlocal.sh"
+
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo sed -i -e 's~{SSHFS_OPTIONS}~$SSHFS_OPTIONS~g' /var/lib/boot2docker/bootlocal.sh"
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo sed -i -e 's/{SSHFS_UID}/$SSHFS_UID/g' /var/lib/boot2docker/bootlocal.sh"
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo sed -i -e 's/{SSHFS_GUID}/$SSHFS_GUID/g' /var/lib/boot2docker/bootlocal.sh"
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo sed -i -e 's/{USER}/$user/g' /var/lib/boot2docker/bootlocal.sh"
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo sed -i -e 's/{VBOXIP}/$VBOXIP/g' /var/lib/boot2docker/bootlocal.sh"
+
+	docker-machine ssh $DOCKER_MACHINE_NAME "sudo chmod +x /var/lib/boot2docker/bootlocal.sh"
+}
+
+function reboot_vm
+{
+	log_info "Rebooting vm"
+
+	docker-machine stop $DOCKER_MACHINE_NAME
+	docker-machine start $DOCKER_MACHINE_NAME
+	sleep 2
+	local fuse=$(docker-machine ssh $DOCKER_MACHINE_NAME mount | grep fuse.sshfs | wc -l | xargs)
+	if [[ $fuse == 1 ]]; then
+		log_info "Your vm is ready! Good work!"
+	else 
+		log_error "Ops! Something goes wrong!"	
+	fi	
+}
+
+function install {
+  log_info "Starting install of docker-osx-dev"
+  init_docker_machine
+  install_sshfs_on_docker_host
+  install_boot_script
+  generate_ssh_key
+  mount_user_dir
+  add_autoboot_script
+  reboot_vm
+}
+
+
+function handle_command {
+  check_prerequisites
+
+  local cmd="$DEFAULT_COMMAND"
+  local log_level="$DEFAULT_LOG_LEVEL"
+
+  while [[ $# > 0 ]]; do
+    key="$1"
+
+    case $key in
+      "$INSTALL_COMMAND")
+        cmd="$INSTALL_COMMAND"
+        ;;
+      -l|--log-level)
+        assert_valid_arg "$2" "$key"
+        log_level="$2"
+        shift
+        ;;
+      -m|--machine-name)
+        assert_valid_arg "$2" "$key"
+        DOCKER_MACHINE_NAME="$2"
+        shift
+        ;;
+      -h|--help)
+        instructions
+        exit 0
+        ;;
+      *)
+        log_error "Unrecognized argument: $key"
+        instructions
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  case "$cmd" in  
+    "$INSTALL_COMMAND")
+      configure_log_level "$log_level"
+      install
+      ;;
+    *)
+      log_error "Internal error: unrecognized command $cmd"
+      exit 1
+      ;;
+  esac
+}
+
+handle_command "$@"
