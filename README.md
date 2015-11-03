@@ -50,7 +50,8 @@ tce -i sshfs.tcz
 
 ## Issues and Workaround
 Sometimes can append that with many virtualmachines Virtualbox lost arp  with hostonly network adapter.
-This can generate some issues with sshfs connection.
+This can generate some issues with sshfs connection. See https://forums.virtualbox.org/viewtopic.php?f=8&t=63998
+
 You can fix it with this workaround
 In your shell create a new vbox adapter
 ```
