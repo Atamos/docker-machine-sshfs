@@ -9,7 +9,7 @@ The performance are near to local machine development.
 
 ##sshfs for tinycore 64bit 
 The sshfs package for 64bit tinycore linux is custom compiled , becouse I'm unable to find a right package in tinycore 64 bit repository. 
-If this version doesn't work on you docker-machine you can recompile it, following this instruction
+If this version doesn't work on your docker-machine you can recompile it, following this instructions
 
 * Download the sshfs-fuse from the original website http://fuse.sourceforge.net/sshfs.html
 * Copy it in the docker-machine for build
@@ -49,15 +49,15 @@ tce -i sshfs.tcz
 ```
 
 ## Issues and Workaround
-Sometimes can append that with many virtualmachines Virtualbox lost arp  with hostonly network adapter.
-This can generate some issues with sshfs connection like lost mountpoint or timout . See https://forums.virtualbox.org/viewtopic.php?f=8&t=63998
+Sometimes can happen that with many virtualmachines Virtualbox lose arp  with hostonly network adapter.
+This can generate some issues with sshfs connection like missing mountpoint or timout. See https://forums.virtualbox.org/viewtopic.php?f=8&t=63998
 
 You can fix it with this workaround
 In your shell create a new vbox adapter
 ```
 $ vboxmanage hostonlyif create
 ```
-Go to virtualbox , select your machine , go to settings , network and change hostonly adapter to the new one
+Go on virtualbox , select your machine , go to settings , network, and change hostonly adapter to the new one
 Log into docker-machine and change connection parameters into bootlocal.sh
 ```
 $ docker-machine ssh *machinename*
@@ -69,6 +69,7 @@ su - docker -c 'sh -c "sshfs -o UserKnownHostsFile=/dev/null -o loglevel=debug -
 ```
 Restart your vm 
 
+NOTE: you can find hostadapter ip with ifconfig on your shell
 
 
 ## Install
