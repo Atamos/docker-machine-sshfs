@@ -50,7 +50,7 @@ tce -i sshfs.tcz
 
 ## Issues and Workaround
 Sometimes can append that with many virtualmachines Virtualbox lost arp  with hostonly network adapter.
-This can generate some issues with sshfs connection. See https://forums.virtualbox.org/viewtopic.php?f=8&t=63998
+This can generate some issues with sshfs connection like lost mountpoint or timout . See https://forums.virtualbox.org/viewtopic.php?f=8&t=63998
 
 You can fix it with this workaround
 In your shell create a new vbox adapter
@@ -104,5 +104,20 @@ $ docker-machine-sshfs install -l DEBUG -m devmachine
  ...
 ```
 At the end of execution you can find a new docker-machine ready for use with /Users mounted as sshfs.fuse filesystem.
+
+Check that sshfs is mounted 
+```
+$ docker-machine ssh _machinename_ mount  | grep sshfs.fuse | wc -l | xargs
+```
+The output should be  **1**
+
+###If you can't find sshf.fuse mount point or it disappears after short timout
+* First try to reboot your vm 
+```
+$ docker-machine stop _machinename_ 
+$ docker-machine start _machinename_
+```
+* Try to change the Virtualbox hostonlynetwork (see the issues on top of this readme)
+*You should consider to create a hostonlynetork for each docker-machine*
 
 
