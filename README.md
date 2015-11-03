@@ -7,6 +7,47 @@ The performance are near to local machine development.
 - docker-toolbox or docker-machine already installed
 - docker-machine version > **0.4.1**
 
+##sshfs for tinycore 64bit 
+The sshfs package for 64bit tinycore linux is custom compiled , becouse I'm unable to find a right package in tinycore 64 bit repository. 
+If this version doesn't work on you docker-machine you can recompile it, following this instruction
+
+* Download the sshfs-fuse from the original website http://fuse.sourceforge.net/sshfs.html
+* Copy it in the docker-machine for build
+```
+ $ docker-machine scp sshfs.tgz machinename:/root/
+```
+* install the dipendencies 
+``` 
+$ docker-machine ssh machinename 
+$ tce load gcc-dev # or some library package that configure may require
+$ tce-load -iw compiletc.tcz
+$ tce-load -wi linux-headers-3.0.21-tinycore.tcz
+$ tce-load -iw squashfs-tools-4.x.tcz
+$ tce-load -iw glibc_apps.tcz
+```
+* Extract the archive
+```
+$ tar zxvf sshfs.tgz
+$ cd sshfs
+```
+* Compile it
+``` 
+$ ./configure --prefix=/usr/local \
+ RPCGEN="$(readlink -f $(which rpcgen)) -Y "$(dirname $(which cpp))
+$ make
+```
+* Create package
+```
+$ touch /tmp/sshfs
+$ make DESTDIR=/tmp/sshfs install-strip
+cd /tmp
+mksquashfs sshfs sshfs.tcz
+```
+Now you can install the package with  
+```
+tce -i sshfs.tcz
+```
+
 ## Issues and Workaround
 Sometimes can append that with many virtualmachines Virtualbox lost arp  with hostonly network adapter.
 This can generate some issues with sshfs connection.
