@@ -275,9 +275,9 @@ function generate_ssh_key
 		log_info 'Generating new keys'
 
 		if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
-			log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"yes \"\" | ssh-keygen -t rsa -b 4096 -N \"\" -C \"marcosciatta@192.168.99.1\"\""
+			log_debug "docker-machine ssh $DOCKER_MACHINE_NAME \"yes \"\" | ssh-keygen -t rsa -b 4096 -N \"\" -C \"$user@$VBOXIP\"\""
 		fi	
-		docker-machine ssh $DOCKER_MACHINE_NAME "yes \"\" | ssh-keygen -t rsa -b 4096 -N \"\" -C \"marcosciatta@192.168.99.1\""
+		docker-machine ssh $DOCKER_MACHINE_NAME "yes \"\" | ssh-keygen -t rsa -b 4096 -N \"\" -C \"$user@$VBOXIP\""
 	fi	
 	
 	log_info "Copy keys in authorized on host machine"
