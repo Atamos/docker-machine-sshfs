@@ -18,7 +18,7 @@ readonly INSTALL_COMMAND="install"
 readonly DEFAULT_COMMAND="$INSTALL_COMMAND"
 readonly MINIMAL_DOCKER_VERSION=0.4.1
 readonly SSHFS_PKG='sshfs-fuse-2.5.x86_64.tcz'
-readonly SSHFS_OPTIONS='-o UserKnownHostsFile=/dev/null -o loglevel=debug -o StrictHostKeyChecking=no -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 -o Ciphers=arcfour,auto_cache,reconnect,big_writes,allow_other,default_permissions'
+readonly SSHFS_OPTIONS='-o UserKnownHostsFile=/dev/null -o loglevel=debug -o StrictHostKeyChecking=no -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 -o auto_cache,reconnect,big_writes,allow_other,default_permissions'
 readonly SSHFS_GUID='50'
 readonly SSHFS_UID='1000'
 
