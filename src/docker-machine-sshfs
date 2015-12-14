@@ -205,7 +205,7 @@ function init_docker_machine {
   	log_debug "CMD: docker-machine env --shell bash $DOCKER_MACHINE_NAME"
   fi	
 
-  docker-machine start $DOCKER_MACHINE_NAME
+#  docker-machine start $DOCKER_MACHINE_NAME
   eval "$(docker-machine env --shell bash $DOCKER_MACHINE_NAME)"
   configure_docker_machine
 }
