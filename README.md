@@ -77,7 +77,7 @@ Download repository and change permission on script
 ```bash
 git clone git@github.com:Atamos/docker-machine-sshfs.git 
 cd docker-machine-sshfs && chmod +x ./scr/docker-machine-sshfs
-cd ./scr/ && ./docker-machine-sshfs [COMMAND] [OPTIONS] 
+cd ./src/ && ./docker-machine-sshfs [COMMAND] [OPTIONS] 
 ```
 **NOTE: Please, launch the command into src directory for now.**
 
