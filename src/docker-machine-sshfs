@@ -247,7 +247,7 @@ function install_boot_script
 
 	log_info 'Get ip address for interface '
 
-	local ipvbox=$(VboxManage list hostonlyifs | awk '/^Name: /{p=$2} /^IPAddress: /{v=$2} /^$/{print ""p"="v}' | grep vboxnet2 |  cut -d'=' -f 2)
+	local ipvbox=$(VboxManage list hostonlyifs | awk '/^Name: /{p=$2} /^IPAddress: /{v=$2} /^$/{print ""p"="v}' | grep $vboxinterface |  cut -d'=' -f 2)
 	VBOXIP=$ipvbox
 	
 	if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then 
