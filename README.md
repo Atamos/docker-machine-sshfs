@@ -4,6 +4,7 @@ This script can be used to create or update a docker-machine changing the mount 
 The performance are near to local machine development.
 
 ## Pre-Requires
+- **Enable your mac to accept connection in ssh**.
 - docker-toolbox or docker-machine already installed
 - docker-machine version > **0.4.1**
 
