@@ -76,7 +76,7 @@ NOTE: you can find hostadapter ip with ifconfig on your shell
 Download repository and change permission on script
 ```bash
 git clone git@github.com:Atamos/docker-machine-sshfs.git 
-cd docker-machine-sshfs && chmod +x ./scr/docker-machine-sshfs
+cd docker-machine-sshfs && chmod +x ./src/docker-machine-sshfs
 cd ./src/ && ./docker-machine-sshfs [COMMAND] [OPTIONS] 
 ```
 **NOTE: Please, launch the command into src directory for now.**
